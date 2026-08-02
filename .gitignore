@@ -1,0 +1,10 @@
+/acme-proxy
+/acme-proxy.exe
+/out/
+/dist/
+
+# Local configuration is expected to hold real zone names and ${VAR} references
+# to real tokens; only the example belongs in git.
+/config.yaml
+/config.yml
+*.local.yaml

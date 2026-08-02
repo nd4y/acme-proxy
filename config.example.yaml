@@ -1,0 +1,42 @@
+# acme-proxy configuration.
+#
+# Secrets belong in the environment, not in this file: any string field may use
+# the ${VAR} form and is resolved at load time. A missing variable is a hard
+# error, so a half-configured proxy never starts.
+
+listen: ":8080"
+
+# TTL for every record acme-proxy creates. Keep it short: challenge records live
+# for seconds, and a long TTL only delays the next issuance.
+ttl_seconds: 60
+
+providers:
+  main:
+    type: cloudflare # cloudflare | memory (memory is for testing only)
+    api_token: ${CF_API_TOKEN} # needs Zone:Read + DNS:Edit on the zones below
+
+    # Zones are explicit. Guessing the zone from a name gets it wrong on the
+    # first multi-level domain and turns into a confusing provider error.
+    zones:
+      - example.com
+
+clients:
+  panel:
+    token: ${CLIENT_TOKEN_PANEL} # bearer token, at least 16 characters
+    provider: main
+
+    # What this client may write. Everything else is denied.
+    #
+    #   example.com          exact name only
+    #   *.example.com        example.com itself and any subdomain
+    #   node?-*.example.com  glob inside one label, label count must match
+    #
+    # The wildcard form covers the bare suffix on purpose: the DNS-01 challenge
+    # for a wildcard certificate "*.edge.example.com" is published at
+    # "_acme-challenge.edge.example.com".
+    allow:
+      - "*.edge.example.com"
+      - "svc1.example.com"
+
+rate_limit:
+  per_client_per_minute: 30

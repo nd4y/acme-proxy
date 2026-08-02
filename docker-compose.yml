@@ -1,0 +1,31 @@
+# Reference deployment. acme-proxy must stay on an internal network: its whole
+# purpose is that only trusted clients can reach it.
+
+services:
+  acme-proxy:
+    image: ghcr.io/nd4y/acme-proxy:latest
+    container_name: acme-proxy
+    restart: unless-stopped
+
+    environment:
+      CF_API_TOKEN: "${CF_API_TOKEN:?set CF_API_TOKEN}"
+      CLIENT_TOKEN_PANEL: "${CLIENT_TOKEN_PANEL:?set CLIENT_TOKEN_PANEL}"
+
+    volumes:
+      - ./config.yaml:/etc/acme-proxy/config.yaml:ro
+
+    # Published on the loopback interface only; reach it over the internal
+    # network or a VPN, never from the internet.
+    ports:
+      - "127.0.0.1:8080:8080"
+
+    read_only: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
