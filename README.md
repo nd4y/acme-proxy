@@ -28,27 +28,65 @@ acme-proxy narrows the grant to what ACME actually needs:
 
 The first two invariants are in code and cannot be relaxed by configuration.
 
-## API
+## The protocol
 
-Authentication is `Authorization: Bearer <client token>`. Errors are
-`{"error": "<code>", "message": "..."}` with codes `unauthorized`,
-`forbidden_domain`, `invalid_request`, `invalid_fqdn`, `no_zone`, `rate_limited`,
-`provider_error`.
+The `/v1` endpoints are a small open contract between an ACME client and a DNS
+broker, and acme-proxy is one implementation of it, not its owner. Any client
+with a generic "HTTP DNS provider" type can point it at any broker that speaks
+the same four endpoints; any broker implementing them is a drop-in replacement
+for acme-proxy.
+
+Authentication is `Authorization: Bearer <client token>`. Bodies are JSON.
 
 | Endpoint | Body | Purpose |
 | --- | --- | --- |
-| `POST /v1/dns-01/present` | `{"fqdn": "_acme-challenge.a.example.com", "value": "..."}` | publish a challenge record; idempotent |
+| `POST /v1/dns-01/present` | `{"fqdn": "_acme-challenge.a.example.com", "value": "..."}` | publish a challenge record; idempotent for the same pair |
 | `POST /v1/dns-01/cleanup` | `{"fqdn": "...", "value": "..."}` | remove it; removing what is already gone is a success |
 | `PUT /v1/persist` | `{"fqdn": "_validation-persist.example.com", "value": "..."}` | upsert the persistent authorization record for `dns-persist-01` |
 | `DELETE /v1/persist` | `{"fqdn": "..."}` | withdraw it |
 | `GET /v1/policy` | — | what this client may do; clients can show it in their own UI |
-| `GET /healthz` | — | liveness, no authentication |
-| `GET /metrics` | — | Prometheus |
 
 `present` appends rather than replaces: an order covering both `example.com` and
 `*.example.com` produces two TXT records at the same name, and dropping one of
 them fails the order. `PUT /v1/persist` replaces, because there must be exactly
 one persistent authorization record per name.
+
+A successful write answers `200` with `{"record_id": "<opaque id>"}`. In
+acme-proxy the id is a stable digest of the (fqdn, value) pair rather than a
+provider identifier — cleanup is addressed by name and value, so neither side
+has to store anything between calls. Clients should treat the field as opaque.
+
+`GET /v1/policy` answers:
+
+```json
+{
+  "client": "panel",
+  "allow": ["*.edge.example.com", "svc1.example.com"],
+  "provider": {"name": "main", "type": "cloudflare", "zones": ["example.com"]},
+  "ttl_seconds": 60,
+  "prefixes": {"challenge": "_acme-challenge.", "persist": "_validation-persist."}
+}
+```
+
+Errors are `{"error": "<code>", "message": "<text>"}`:
+
+| Status | Code | When |
+| --- | --- | --- |
+| 401 | `unauthorized` | missing or unknown bearer token |
+| 403 | `forbidden_domain` | the name is outside the client's allow list |
+| 422 | `invalid_request` | malformed body, missing or oversized `value` |
+| 422 | `invalid_fqdn` | the name lacks the `_acme-challenge.` / `_validation-persist.` prefix or is not a valid domain |
+| 422 | `no_zone` | the name is outside every zone the provider is configured for |
+| 429 | `rate_limited` | per-client rate limit exceeded |
+| 502 | `provider_error` | the DNS provider refused or timed out |
+
+For an alternative broker, `present` and `cleanup` with the semantics above are
+the whole required surface. The persist pair only matters once clients use
+`dns-persist-01`, and `/v1/policy` is optional diagnostics — a client must treat
+its absence as "no information", not as a broken broker. `GET /healthz`
+(liveness, no authentication) and `GET /metrics` (Prometheus) also exist here,
+but they are operational endpoints of this implementation, not part of the
+protocol.
 
 Example:
 
