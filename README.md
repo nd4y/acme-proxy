@@ -69,6 +69,18 @@ that fails to parse or to build its providers is logged and **discarded** — th
 previous one keeps running. `SIGHUP` forces a reload, which is what you want when
 the file is mounted read-only.
 
+Where a file cannot be handed to the container — this image has no shell to write
+one, and some hosts turn a bind-mount of a missing path into a directory — put
+the whole document, base64-encoded, in `ACME_PROXY_CONFIG_B64`:
+
+```bash
+docker run -e ACME_PROXY_CONFIG_B64="$(base64 -w0 config.yaml)" -e CF_API_TOKEN=... ...
+```
+
+It is parsed and validated exactly like the file, `${VAR}` included, so secrets
+still come from the environment rather than from the encoded blob. Nothing is
+watched in this mode: the configuration changes when the container is recreated.
+
 Allow patterns:
 
 | Pattern | Matches |

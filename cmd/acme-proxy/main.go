@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"flag"
 	"fmt"
@@ -12,6 +13,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -24,6 +26,10 @@ import (
 
 // version is stamped at build time: -ldflags "-X main.version=v1.2.3".
 var version = "dev"
+
+// inlineConfigEnv carries the whole configuration, base64-encoded, for hosts
+// where a file cannot be mounted.
+const inlineConfigEnv = "ACME_PROXY_CONFIG_B64"
 
 const (
 	readHeaderTimeout = 10 * time.Second
@@ -62,7 +68,28 @@ func run() error {
 	log := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	auditLog := audit.New(os.Stdout)
 
-	cfg, err := config.Load(*configPath)
+	// Some hosts cannot hand a file to a container: the image has no shell to
+	// write one, and bind-mounting a path that does not exist yet creates a
+	// directory instead of a file. There the configuration arrives base64-encoded
+	// in the environment.
+	inlineConfig := os.Getenv(inlineConfigEnv)
+
+	var (
+		cfg *config.Config
+		err error
+	)
+
+	if inlineConfig != "" {
+		decoded, decodeErr := base64.StdEncoding.DecodeString(strings.TrimSpace(inlineConfig))
+		if decodeErr != nil {
+			return fmt.Errorf("%s is not valid base64: %w", inlineConfigEnv, decodeErr)
+		}
+
+		cfg, err = config.Parse(decoded)
+	} else {
+		cfg, err = config.Load(*configPath)
+	}
+
 	if err != nil {
 		return err
 	}
@@ -87,12 +114,18 @@ func run() error {
 		return nil
 	}
 
-	watcher, err := config.NewWatcher(*configPath, apply, log)
-	if err != nil {
-		return err
-	}
+	// There is nothing to watch when the configuration came from the
+	// environment: it can only change by recreating the container.
+	var watcher *config.Watcher
 
-	defer watcher.Close()
+	if inlineConfig == "" {
+		watcher, err = config.NewWatcher(*configPath, apply, log)
+		if err != nil {
+			return err
+		}
+
+		defer watcher.Close()
+	}
 
 	addr := cfg.Listen
 	if *listenAddr != "" {
@@ -118,15 +151,22 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	go handleSighup(ctx, watcher)
+	if watcher != nil {
+		go handleSighup(ctx, watcher)
+	}
 
 	errc := make(chan error, 1)
+
+	configSource := *configPath
+	if inlineConfig != "" {
+		configSource = inlineConfigEnv
+	}
 
 	go func() {
 		log.Info("acme-proxy started",
 			"version", version,
 			"listen", addr,
-			"config", *configPath,
+			"config", configSource,
 			"clients", len(cfg.Clients),
 			"providers", len(cfg.Providers),
 		)
