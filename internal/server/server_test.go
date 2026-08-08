@@ -352,6 +352,38 @@ func TestHealth(t *testing.T) {
 	}
 }
 
+func TestClientDisconnectDoesNotCancelWrite(t *testing.T) {
+	handler, store := newTestServer(t)
+
+	const (
+		fqdn  = "_acme-challenge.edge.example.com"
+		value = "abandoned-token"
+	)
+
+	// The client gave up before the provider finished: its request context is
+	// already cancelled when the mutation starts. The write must still happen —
+	// an aborted DNS operation leaves the zone in a state neither side knows
+	// about. The memory provider honors cancellation, so without the detached
+	// context this returns a provider error and no record.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/dns-01/present",
+		strings.NewReader(`{"fqdn":"`+fqdn+`","value":"`+value+`"}`)).WithContext(ctx)
+	req.Header.Set("Authorization", "Bearer "+testToken)
+
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d body %s", rec.Code, rec.Body)
+	}
+
+	if !hasRecord(t, store, fqdn, value) {
+		t.Fatal("the write was cancelled together with the client")
+	}
+}
+
 func hasRecord(t *testing.T, store *state.Store, fqdn, value string) bool {
 	t.Helper()
 

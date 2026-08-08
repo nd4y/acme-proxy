@@ -19,6 +19,11 @@ import (
 // (a couple hundred).
 const maxValueLength = 1024
 
+// providerTimeout caps a single DNS mutation once it has started. It is
+// deliberately independent of the client's patience: Cloudflare has been seen
+// taking 30+ seconds on a write, and clients tend to give up sooner.
+const providerTimeout = 2 * time.Minute
+
 type recordRequest struct {
 	FQDN  string `json:"fqdn"`
 	Value string `json:"value"`
@@ -154,8 +159,16 @@ func (s *Server) mutate(
 		return
 	}
 
+	// A client that disconnects mid-write must not cancel the mutation: an
+	// aborted DNS operation leaves the zone in a state neither side knows
+	// about. The write runs to completion (or its own cap) either way — the
+	// audit line below then records what actually happened, not what the
+	// client managed to observe.
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), providerTimeout)
+	defer cancel()
+
 	started := time.Now()
-	err := apply(r.Context(), entry, fqdn, req.Value, rc.State.Config.TTL())
+	err := apply(ctx, entry, fqdn, req.Value, rc.State.Config.TTL())
 	elapsed := timeSince(started)
 
 	s.metrics.observeProvider(entry.Name, rc.Action, elapsed.Seconds())

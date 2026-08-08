@@ -10,7 +10,8 @@ import (
 
 // Memory is an in-process DNS backend. It exists so the service can be run and
 // tested end to end without touching a real zone; it never persists anything and
-// must not be used for real issuance.
+// must not be used for real issuance. It honors context cancellation the way a
+// real provider's HTTP client would, so context bugs are observable in tests.
 type Memory struct {
 	mu      sync.Mutex
 	records map[string][]libdns.RR
@@ -22,7 +23,11 @@ func NewMemory() *Memory {
 }
 
 // GetRecords returns everything stored for the zone.
-func (m *Memory) GetRecords(_ context.Context, zone string) ([]libdns.Record, error) {
+func (m *Memory) GetRecords(ctx context.Context, zone string) ([]libdns.Record, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -37,7 +42,11 @@ func (m *Memory) GetRecords(_ context.Context, zone string) ([]libdns.Record, er
 }
 
 // AppendRecords adds records without touching existing ones.
-func (m *Memory) AppendRecords(_ context.Context, zone string, recs []libdns.Record) ([]libdns.Record, error) {
+func (m *Memory) AppendRecords(ctx context.Context, zone string, recs []libdns.Record) ([]libdns.Record, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -51,7 +60,11 @@ func (m *Memory) AppendRecords(_ context.Context, zone string, recs []libdns.Rec
 }
 
 // SetRecords replaces every record sharing a name and type with the input.
-func (m *Memory) SetRecords(_ context.Context, zone string, recs []libdns.Record) ([]libdns.Record, error) {
+func (m *Memory) SetRecords(ctx context.Context, zone string, recs []libdns.Record) ([]libdns.Record, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -77,7 +90,11 @@ func (m *Memory) SetRecords(_ context.Context, zone string, recs []libdns.Record
 }
 
 // DeleteRecords removes records matching name, type and data.
-func (m *Memory) DeleteRecords(_ context.Context, zone string, recs []libdns.Record) ([]libdns.Record, error) {
+func (m *Memory) DeleteRecords(ctx context.Context, zone string, recs []libdns.Record) ([]libdns.Record, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
