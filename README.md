@@ -38,13 +38,13 @@ for acme-proxy.
 
 Authentication is `Authorization: Bearer <client token>`. Bodies are JSON.
 
-| Endpoint | Body | Purpose |
-| --- | --- | --- |
-| `POST /v1/dns-01/present` | `{"fqdn": "_acme-challenge.a.example.com", "value": "..."}` | publish a challenge record; idempotent for the same pair |
-| `POST /v1/dns-01/cleanup` | `{"fqdn": "...", "value": "..."}` | remove it; removing what is already gone is a success |
-| `PUT /v1/persist` | `{"fqdn": "_validation-persist.example.com", "value": "..."}` | upsert the persistent authorization record for `dns-persist-01` |
-| `DELETE /v1/persist` | `{"fqdn": "..."}` | withdraw it |
-| `GET /v1/policy` | — | what this client may do; clients can show it in their own UI |
+| Endpoint                  | Body                                                          | Purpose                                                         |
+| ------------------------- | ------------------------------------------------------------- | --------------------------------------------------------------- |
+| `POST /v1/dns-01/present` | `{"fqdn": "_acme-challenge.a.example.com", "value": "..."}`   | publish a challenge record; idempotent for the same pair        |
+| `POST /v1/dns-01/cleanup` | `{"fqdn": "...", "value": "..."}`                             | remove it; removing what is already gone is a success           |
+| `PUT /v1/persist`         | `{"fqdn": "_validation-persist.example.com", "value": "..."}` | upsert the persistent authorization record for `dns-persist-01` |
+| `DELETE /v1/persist`      | `{"fqdn": "..."}`                                             | withdraw it                                                     |
+| `GET /v1/policy`          | —                                                             | what this client may do; clients can show it in their own UI    |
 
 `present` appends rather than replaces: an order covering both `example.com` and
 `*.example.com` produces two TXT records at the same name, and dropping one of
@@ -62,23 +62,23 @@ has to store anything between calls. Clients should treat the field as opaque.
 {
   "client": "panel",
   "allow": ["*.edge.example.com", "svc1.example.com"],
-  "provider": {"name": "main", "type": "cloudflare", "zones": ["example.com"]},
+  "provider": { "name": "main", "type": "cloudflare", "zones": ["example.com"] },
   "ttl_seconds": 60,
-  "prefixes": {"challenge": "_acme-challenge.", "persist": "_validation-persist."}
+  "prefixes": { "challenge": "_acme-challenge.", "persist": "_validation-persist." }
 }
 ```
 
 Errors are `{"error": "<code>", "message": "<text>"}`:
 
-| Status | Code | When |
-| --- | --- | --- |
-| 401 | `unauthorized` | missing or unknown bearer token |
-| 403 | `forbidden_domain` | the name is outside the client's allow list |
-| 422 | `invalid_request` | malformed body, missing or oversized `value` |
-| 422 | `invalid_fqdn` | the name lacks the `_acme-challenge.` / `_validation-persist.` prefix or is not a valid domain |
-| 422 | `no_zone` | the name is outside every zone the provider is configured for |
-| 429 | `rate_limited` | per-client rate limit exceeded |
-| 502 | `provider_error` | the DNS provider refused or timed out |
+| Status | Code               | When                                                                                           |
+| ------ | ------------------ | ---------------------------------------------------------------------------------------------- |
+| 401    | `unauthorized`     | missing or unknown bearer token                                                                |
+| 403    | `forbidden_domain` | the name is outside the client's allow list                                                    |
+| 422    | `invalid_request`  | malformed body, missing or oversized `value`                                                   |
+| 422    | `invalid_fqdn`     | the name lacks the `_acme-challenge.` / `_validation-persist.` prefix or is not a valid domain |
+| 422    | `no_zone`          | the name is outside every zone the provider is configured for                                  |
+| 429    | `rate_limited`     | per-client rate limit exceeded                                                                 |
+| 502    | `provider_error`   | the DNS provider refused or timed out                                                          |
 
 For an alternative broker, `present` and `cleanup` with the semantics above are
 the whole required surface. The persist pair only matters once clients use
@@ -121,10 +121,10 @@ watched in this mode: the configuration changes when the container is recreated.
 
 Allow patterns:
 
-| Pattern | Matches |
-| --- | --- |
-| `example.com` | exactly that name |
-| `*.example.com` | `example.com` and any subdomain at any depth |
+| Pattern               | Matches                                                |
+| --------------------- | ------------------------------------------------------ |
+| `example.com`         | exactly that name                                      |
+| `*.example.com`       | `example.com` and any subdomain at any depth           |
 | `node?-*.example.com` | glob inside one label; the number of labels must match |
 
 `*.com` and other single-label suffixes are rejected: one typo there would hand
@@ -172,3 +172,7 @@ With `type: memory` and a couple of environment variables, the full request path
 ## License
 
 MIT, see [LICENSE](LICENSE).
+
+## Development standard
+
+This repository adopts version 0.4.0 of the shared development standard. Read the [English guide](docs/en/development-standard.md) or [Russian guide](docs/ru/development-standard.md). The local toolkit checks staged secrets, changed-file formatting and bilingual documentation before merge. Existing product CI remains in place. Adoption is in progress; product acceptance and legacy-document translation are recorded separately in .repo-policy.json.
